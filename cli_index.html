@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatTTS 语音助手</title>
+    <style>
+        body { font-family: sans-serif; padding: 40px; background: #f9f9f9; }
+        .container { max-width: 600px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        textarea { width: 100%; height: 100px; margin-bottom: 15px; padding: 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; resize: none; font-size: 16px; }
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-size: 16px; transition: opacity 0.2s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-send { background-color: #4CAF50; }
+        .btn-play { background-color: #2196F3; }
+        .btn-save { background-color: #FF9800; }
+        .status { margin-top: 15px; text-align: center; color: #666; height: 20px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🎙️ ChatTTS 语音助手</h2>
+    <textarea id="textInput" placeholder="请输入想要合成的文本..."></textarea>
+    
+    <div class="btn-group">
+        <!-- 按钮1：发送给服务端 -->
+        <button id="sendBtn" class="btn-send" onclick="synthesizeAudio()">生成语音</button>
+        
+        <!-- 按钮2：保存本地 -->
+        <button id="saveBtn" class="btn-save" onclick="saveAudio()" disabled>保存音频</button>
+        
+        <!-- 按钮3：播放音频 -->
+        <button id="playBtn" class="btn-play" onclick="playAudio()" disabled>播放音频</button>
+    </div>
+    
+    <div id="statusText" class="status"></div>
+</div>
+
+<script>
+    // ⚠️ 请确保这里的地址与你 FastAPI 后端运行的地址一致
+    const API_URL = 'http://127.0.0.1:8000/api/tts'; 
+
+    // 全局变量，用于存储生成的音频对象URL
+    let currentAudioUrl = null;
+    let audioInstance = null; // 用于控制播放状态
+
+    /**
+     * 按钮1逻辑：将文本发送给服务端并获取音频流
+     */
+    async function synthesizeAudio() {
+        const text = document.getElementById('textInput').value.trim();
+        if (!text) {
+            alert("请输入有效的文本内容！");
+            return;
+        }
+
+        const sendBtn = document.getElementById('sendBtn');
+        const statusText = document.getElementById('statusText');
+        
+        // 状态控制与UI更新
+        sendBtn.disabled = true;
+        statusText.textContent = "正在连接服务器并合成语音...";
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+
+            if (!response.ok) throw new Error(`服务端错误: ${response.status}`);
+
+            // 释放旧的URL防止内存泄漏
+            if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+
+            // 将返回的音频流转换为 Blob 对象并生成临时URL
+            const audioBlob = await response.blob();
+            currentAudioUrl = URL.createObjectURL(audioBlob);
+
+            // 启用播放和下载按钮
+            document.getElementById('playBtn').disabled = false;
+            document.getElementById('saveBtn').disabled = false;
+            statusText.textContent = "✅ 语音合成成功！";
+            
+        } catch (error) {
+            console.error('TTS请求失败:', error);
+            statusText.textContent = "❌ 语音合成失败：" + error.message;
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    /**
+     * 按钮3逻辑：播放生成的音频
+     */
+    function playAudio() {
+        if (!currentAudioUrl) return;
+        
+        // 如果当前有正在播放的音频，先停止并释放内存
+        if (audioInstance) {
+            audioInstance.pause();
+            audioInstance.onended = null;
+        }
+        
+        audioInstance = new Audio(currentAudioUrl);
+        audioInstance.play();
+        document.getElementById('statusText').textContent = "🔊 正在播放...";
+        
+        // 播放结束后的回调
+        audioInstance.onended = () => {
+            document.getElementById('statusText').textContent = "✅ 播放完毕";
+        };
+    }
+
+    /**
+     * 按钮2逻辑：将生成的音频文件保存到本地
+     */
+    function saveAudio() {
+        if (!currentAudioUrl) return;
+        
+        // 动态创建一个隐藏的 <a> 标签触发下载
+        const downloadLink = document.createElement('a');
+        downloadLink.href = currentAudioUrl;
+        downloadLink.download = 'chattts_audio.wav'; // 指定默认文件名
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        document.getElementById('statusText').textContent = "💾 正在保存文件...";
+    }
+</script>
+
+</body>
+</html>
